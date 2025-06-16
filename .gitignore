@@ -1,0 +1,58 @@
+# Configuration files with secrets
+config/homelab.conf
+secrets/
+*.key
+*.pem
+*.p12
+
+# Environment-specific configurations
+.env
+.env.local
+.env.production
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker volumes and data
+docker-data/
+grafana-data/
+prometheus-data/
+alertmanager-data/
+loki-data/
+
+# Certificates and keys
+certs/
+*.crt
+*.csr
+acme.json
+
+# Local testing
+test-results/
+coverage/
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
