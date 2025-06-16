@@ -1,0 +1,289 @@
+# Dynamic Traefik Configuration for Dokploy Routing
+# This file is watched by Traefik and updates are applied automatically
+
+http:
+  # Middlewares
+  middlewares:
+    # Security headers for all applications
+    security-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlMaxAge: 100
+        hostsProxyHeaders:
+          - "X-Forwarded-Host"
+          - "X-Forwarded-Proto"
+          - "X-Forwarded-For"
+        referrerPolicy: "strict-origin-when-cross-origin"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 31536000
+        stsPreload: true
+        frameDeny: true
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' wss: https:; frame-ancestors 'none';"
+
+    # Rate limiting middleware
+    rate-limit:
+      rateLimit:
+        burst: 50
+        average: 25
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Rate limiting for API endpoints (stricter)
+    api-rate-limit:
+      rateLimit:
+        burst: 20
+        average: 10
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Compression middleware
+    compression:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+
+    # Redirect to HTTPS
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # CORS headers for API endpoints
+    cors-headers:
+      headers:
+        accessControlAllowOriginList:
+          - "https://*.${DOMAIN_NAME}"
+        accessControlAllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        accessControlAllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-Requested-With"
+        accessControlExposeHeaders:
+          - "Content-Length"
+          - "Content-Range"
+        accessControlAllowCredentials: true
+        accessControlMaxAge: 100
+
+  # Routers for different Dokploy instances
+  routers:
+    # ==============================================
+    # DOKPLOY DEVELOPMENT INSTANCE
+    # Routes: *.dev.yourdomain.com
+    # ==============================================
+    dokploy-dev-router:
+      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.dev.${DOMAIN_NAME}`)"
+      service: dokploy-dev-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+        domains:
+          - main: "*.dev.${DOMAIN_NAME}"
+            sans:
+              - "dev.${DOMAIN_NAME}"
+      middlewares:
+        - security-headers
+        - compression
+        - rate-limit
+      priority: 100
+
+    # Development root domain
+    dokploy-dev-root:
+      rule: "Host(`dev.${DOMAIN_NAME}`)"
+      service: dokploy-dev-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+      priority: 200
+
+    # ==============================================  
+    # DOKPLOY STAGING INSTANCE
+    # Routes: *.staging.yourdomain.com
+    # ==============================================
+    dokploy-staging-router:
+      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.staging.${DOMAIN_NAME}`)"
+      service: dokploy-staging-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+        domains:
+          - main: "*.staging.${DOMAIN_NAME}"
+            sans:
+              - "staging.${DOMAIN_NAME}"
+      middlewares:
+        - security-headers
+        - compression
+        - rate-limit
+      priority: 100
+
+    # Staging root domain
+    dokploy-staging-root:
+      rule: "Host(`staging.${DOMAIN_NAME}`)"
+      service: dokploy-staging-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+      priority: 200
+
+    # ==============================================
+    # DOKPLOY PRODUCTION INSTANCE  
+    # Routes: *.prod.yourdomain.com and *.yourdomain.com
+    # ==============================================
+    dokploy-prod-router:
+      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.prod.${DOMAIN_NAME}`) || HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.${DOMAIN_NAME}`)"
+      service: dokploy-prod-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+        domains:
+          - main: "*.prod.${DOMAIN_NAME}"
+            sans:
+              - "prod.${DOMAIN_NAME}"
+          - main: "*.${DOMAIN_NAME}"
+            sans:
+              - "${DOMAIN_NAME}"
+      middlewares:
+        - security-headers
+        - compression
+        - rate-limit
+      priority: 100
+
+    # Production root domain
+    dokploy-prod-root:
+      rule: "Host(`prod.${DOMAIN_NAME}`) || Host(`${DOMAIN_NAME}`)"
+      service: dokploy-prod-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+      priority: 200
+
+    # ==============================================
+    # API ROUTES (with stricter rate limiting)
+    # ==============================================
+    dokploy-api-dev:
+      rule: "Host(`api.dev.${DOMAIN_NAME}`) || HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.dev.${DOMAIN_NAME}`) && PathPrefix(`/api`)"
+      service: dokploy-dev-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - api-rate-limit
+        - cors-headers
+      priority: 300
+
+    dokploy-api-staging:
+      rule: "Host(`api.staging.${DOMAIN_NAME}`) || HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.staging.${DOMAIN_NAME}`) && PathPrefix(`/api`)"
+      service: dokploy-staging-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - api-rate-limit
+        - cors-headers
+      priority: 300
+
+    dokploy-api-prod:
+      rule: "Host(`api.${DOMAIN_NAME}`) || Host(`api.prod.${DOMAIN_NAME}`) || HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.${DOMAIN_NAME}`) && PathPrefix(`/api`)"
+      service: dokploy-prod-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - api-rate-limit
+        - cors-headers
+      priority: 300
+
+  # Services (Backend Servers)
+  services:
+    # Dokploy Development Instance
+    dokploy-dev-service:
+      loadBalancer:
+        servers:
+          - url: "http://${DOKPLOY_DEV_IP}:80"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: 1ms
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "5s"
+          scheme: "http"
+          port: 80
+
+    # Dokploy Staging Instance  
+    dokploy-staging-service:
+      loadBalancer:
+        servers:
+          - url: "http://${DOKPLOY_STAGING_IP}:80"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: 1ms
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "5s"
+          scheme: "http"
+          port: 80
+
+    # Dokploy Production Instance
+    dokploy-prod-service:
+      loadBalancer:
+        servers:
+          - url: "http://${DOKPLOY_PROD_IP}:80"
+        passHostHeader: true
+        responseForwarding:
+          flushInterval: 1ms
+        healthCheck:
+          path: "/health"
+          interval: "30s"
+          timeout: "5s"
+          scheme: "http"
+          port: 80
+
+# TCP Configuration (for non-HTTP services if needed)
+tcp:
+  routers: {}
+  services: {}
+
+# UDP Configuration (for UDP services if needed)
+udp:
+  routers: {}
+  services: {}

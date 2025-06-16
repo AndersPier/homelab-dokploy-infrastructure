@@ -1,0 +1,124 @@
+# Infrastructure Traefik - Entry Point Load Balancer
+# This provides true load balancing and SSL termination for all Dokploy instances
+
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: infrastructure-traefik
+    restart: unless-stopped
+    
+    command:
+      # Static configuration via command line
+      - "--configfile=/etc/traefik/traefik.yml"
+      
+    ports:
+      - "80:80"     # HTTP entry point
+      - "443:443"   # HTTPS entry point  
+      - "8080:8080" # Traefik dashboard
+
+    environment:
+      # ==============================================
+      # DNS PROVIDER CREDENTIALS
+      # Update these based on your DNS provider
+      # See: config/dns-providers.md for setup guide
+      # ==============================================
+      
+      # Cloudflare (recommended)
+      - CLOUDFLARE_EMAIL=${CLOUDFLARE_EMAIL}
+      - CLOUDFLARE_DNS_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      
+      # Alternative providers (uncomment as needed):
+      # DigitalOcean
+      # - DO_AUTH_TOKEN=${DO_AUTH_TOKEN}
+      
+      # AWS Route53
+      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      # - AWS_REGION=${AWS_REGION}
+      
+      # Namecheap
+      # - NAMECHEAP_API_USER=${NAMECHEAP_API_USER}
+      # - NAMECHEAP_API_KEY=${NAMECHEAP_API_KEY}
+      
+      # Google Cloud DNS
+      # - GCE_PROJECT=${GCE_PROJECT}
+      # - GCE_SERVICE_ACCOUNT_FILE=/gcp-creds.json
+      
+      # OVH
+      # - OVH_ENDPOINT=${OVH_ENDPOINT}
+      # - OVH_APPLICATION_KEY=${OVH_APPLICATION_KEY}
+      # - OVH_APPLICATION_SECRET=${OVH_APPLICATION_SECRET}
+      # - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
+
+    volumes:
+      # Configuration files
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      
+      # Certificate storage (persistent across restarts)
+      - traefik-certs:/etc/traefik/certs
+      
+      # Log storage
+      - ./logs:/var/log/traefik
+      
+      # Docker socket for Docker provider (if needed)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+      # Optional: GCP service account file
+      # - ./gcp-service-account.json:/gcp-creds.json:ro
+
+    networks:
+      - traefik-net
+      - infrastructure-net
+
+    labels:
+      # Enable Traefik for this service
+      - "traefik.enable=true"
+      
+      # Dashboard router (access via traefik.yourdomain.com)
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth,security-headers"
+      
+      # Basic authentication for dashboard
+      # Generate with: htpasswd -nb admin your-password
+      # Default: admin/admin (CHANGE THIS!)
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$10$$8K7VzQH8.xJO.z7K8K8K8u0K8K8K8K8K8K8K8K8K8"
+      
+      # Security headers middleware
+      - "traefik.http.middlewares.security-headers.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE"
+      - "traefik.http.middlewares.security-headers.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.security-headers.headers.hostsproxyheaders=X-Forwarded-Host"
+      - "traefik.http.middlewares.security-headers.headers.referrerPolicy=same-origin"
+      - "traefik.http.middlewares.security-headers.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.browserxssfilter=true"
+      - "traefik.http.middlewares.security-headers.headers.forcestsheader=true"
+      - "traefik.http.middlewares.security-headers.headers.stsincludesubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsseconds=31536000"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Networks
+networks:
+  traefik-net:
+    external: true
+  infrastructure-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+# Volumes
+volumes:
+  traefik-certs:
+    driver: local

@@ -1,0 +1,450 @@
+# Complete Monitoring Stack for Homelab Infrastructure
+# Deploy this on a dedicated monitoring server or LXC container
+
+version: '3.8'
+
+services:
+  # ==============================================
+  # PROMETHEUS - Metrics Collection
+  # ==============================================
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "9090:9090"
+      
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+      
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=90d'
+      - '--storage.tsdb.retention.size=50GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--web.external-url=http://prometheus.${DOMAIN_NAME}'
+      - '--web.route-prefix=/'
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================
+  # GRAFANA - Visualization Platform
+  # ==============================================
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: grafana
+    hostname: grafana
+    restart: unless-stopped
+    
+    ports:
+      - "3000:3000"
+      
+    environment:
+      # Admin credentials (change these!)
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-homelab123!}
+      
+      # Basic settings
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_DEFAULT_THEME=dark
+      - GF_USERS_HOME_PAGE=/d/homelab-overview
+      
+      # Features
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      
+      # External URL
+      - GF_SERVER_ROOT_URL=https://monitoring.${DOMAIN_NAME}
+      - GF_SERVER_DOMAIN=monitoring.${DOMAIN_NAME}
+      
+      # Database settings (SQLite)
+      - GF_DATABASE_TYPE=sqlite3
+      - GF_DATABASE_PATH=/var/lib/grafana/grafana.db
+      
+      # SMTP settings (optional)
+      - GF_SMTP_ENABLED=${SMTP_ENABLED:-false}
+      - GF_SMTP_HOST=${SMTP_HOST:-smtp.gmail.com:587}
+      - GF_SMTP_USER=${SMTP_USER:-}
+      - GF_SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - GF_SMTP_FROM_ADDRESS=${SMTP_FROM:-alerts@yourdomain.com}
+      
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`monitoring.${DOMAIN_NAME}`) || Host(`grafana.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      
+    depends_on:
+      - prometheus
+      
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================
+  # ALERTMANAGER - Alert Routing
+  # ==============================================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: alertmanager
+    hostname: alertmanager
+    restart: unless-stopped
+    
+    ports:
+      - "9093:9093"
+      
+    volumes:
+      - ./alertmanager:/etc/alertmanager
+      - alertmanager-data:/alertmanager
+      
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alerts.${DOMAIN_NAME}'
+      - '--cluster.listen-address='
+      - '--log.level=info'
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alerts.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.alertmanager.entrypoints=websecure"
+      - "traefik.http.routers.alertmanager.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+      
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================
+  # NODE EXPORTER - System Metrics
+  # ==============================================
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: node-exporter
+    hostname: node-exporter
+    restart: unless-stopped
+    
+    ports:
+      - "9100:9100"
+      
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+      
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.systemd'
+      - '--collector.processes'
+      - '--no-collector.ipvs'
+      
+    networks:
+      - monitoring
+      
+    pid: host
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==============================================
+  # CADVISOR - Container Metrics
+  # ==============================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.48.1
+    container_name: cadvisor
+    hostname: cadvisor
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"
+      
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+      
+    devices:
+      - /dev/kmsg
+      
+    networks:
+      - monitoring
+      
+    privileged: true
+    
+    command:
+      - '--housekeeping_interval=30s'
+      - '--docker_only=true'
+      - '--store_container_labels=false'
+      
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==============================================
+  # BLACKBOX EXPORTER - Endpoint Monitoring
+  # ==============================================
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: blackbox-exporter
+    hostname: blackbox-exporter
+    restart: unless-stopped
+    
+    ports:
+      - "9115:9115"
+      
+    volumes:
+      - ./blackbox:/etc/blackbox_exporter
+      
+    command:
+      - '--config.file=/etc/blackbox_exporter/blackbox.yml'
+      - '--log.level=info'
+      
+    networks:
+      - monitoring
+      
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9115/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==============================================
+  # LOKI - Log Aggregation
+  # ==============================================
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: loki
+    hostname: loki
+    restart: unless-stopped
+    
+    ports:
+      - "3100:3100"
+      
+    volumes:
+      - ./loki:/etc/loki
+      - loki-data:/loki
+      
+    command:
+      - '-config.file=/etc/loki/loki.yml'
+      
+    networks:
+      - monitoring
+      
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==============================================
+  # PROMTAIL - Log Collection Agent
+  # ==============================================
+  promtail:
+    image: grafana/promtail:2.9.3
+    container_name: promtail
+    hostname: promtail
+    restart: unless-stopped
+    
+    volumes:
+      - ./promtail:/etc/promtail
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      
+    command:
+      - '-config.file=/etc/promtail/promtail.yml'
+      
+    networks:
+      - monitoring
+      
+    depends_on:
+      - loki
+
+  # ==============================================
+  # UPTIME KUMA - Uptime Monitoring
+  # ==============================================
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.11
+    container_name: uptime-kuma
+    hostname: uptime-kuma
+    restart: unless-stopped
+    
+    ports:
+      - "3001:3001"
+      
+    volumes:
+      - uptime-kuma-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime-kuma.rule=Host(`uptime.${DOMAIN_NAME}`) || Host(`status.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.uptime-kuma.entrypoints=websecure"
+      - "traefik.http.routers.uptime-kuma.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.uptime-kuma.loadbalancer.server.port=3001"
+      
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================
+  # SPEEDTEST TRACKER - Internet Speed Monitoring
+  # ==============================================
+  speedtest-tracker:
+    image: henrywhitaker3/speedtest-tracker:v0.20.6
+    container_name: speedtest-tracker
+    hostname: speedtest-tracker
+    restart: unless-stopped
+    
+    ports:
+      - "8765:80"
+      
+    environment:
+      - OOKLA_EULA_GDPR=true
+      - DB_CONNECTION=sqlite
+      - SPEEDTEST_SCHEDULE=0 */6 * * *  # Every 6 hours
+      - SPEEDTEST_SERVERS=  # Auto-select best server
+      - DISPLAY_TIMEZONE=America/New_York
+      - APP_NAME=Speedtest Tracker
+      - APP_URL=https://speedtest.${DOMAIN_NAME}
+      
+    volumes:
+      - speedtest-data:/config
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.speedtest.rule=Host(`speedtest.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.speedtest.entrypoints=websecure"
+      - "traefik.http.routers.speedtest.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.speedtest.loadbalancer.server.port=80"
+
+  # ==============================================
+  # PORTAINER - Container Management
+  # ==============================================
+  portainer:
+    image: portainer/portainer-ce:2.19.4
+    container_name: portainer
+    hostname: portainer
+    restart: unless-stopped
+    
+    ports:
+      - "9000:9000"
+      
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+      
+    networks:
+      - monitoring
+      - traefik-net
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN_NAME}`) || Host(`docker.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt-prod"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ==============================================
+# NETWORKS
+# ==============================================
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+  
+  traefik-net:
+    external: true
+
+# ==============================================
+# VOLUMES
+# ==============================================
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+  loki-data:
+    driver: local
+  uptime-kuma-data:
+    driver: local
+  speedtest-data:
+    driver: local
+  portainer-data:
+    driver: local

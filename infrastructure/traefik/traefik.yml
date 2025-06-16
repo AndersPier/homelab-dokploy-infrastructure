@@ -1,0 +1,142 @@
+# Traefik Static Configuration
+# This file contains the main Traefik configuration
+
+# Global Configuration
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# API Configuration
+api:
+  dashboard: true
+  debug: true
+  insecure: false  # Dashboard only accessible via HTTPS
+
+# Log Configuration  
+log:
+  level: INFO
+  filePath: "/var/log/traefik/traefik.log"
+  format: json
+
+# Access Logs
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  format: json
+  fields:
+    defaultMode: keep
+    names:
+      ClientUsername: drop
+    headers:
+      defaultMode: keep
+      names:
+        User-Agent: keep
+        Authorization: drop
+        Content-Type: keep
+
+# Metrics (for Prometheus integration)
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    manualRouting: true
+
+# EntryPoints Configuration
+entryPoints:
+  # HTTP EntryPoint (redirects to HTTPS)
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entrypoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  # HTTPS EntryPoint (main entry for all traffic)
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        options: modern
+        
+  # Traefik Dashboard (internal access)
+  traefik:
+    address: ":8080"
+
+# Providers Configuration
+providers:
+  # File provider for static routes to Dokploy instances
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+  # Docker provider for local infrastructure services
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: "traefik-net"
+    watch: true
+
+# Certificate Resolvers
+certificatesResolvers:
+  # Production Let's Encrypt with DNS Challenge
+  letsencrypt-prod:
+    acme:
+      email: "${ADMIN_EMAIL}"
+      storage: "/etc/traefik/certs/acme.json"
+      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+      keyType: EC256
+      
+      # DNS Challenge for wildcard certificates
+      dnsChallenge:
+        provider: "${DNS_PROVIDER}"
+        delayBeforeCheck: 60s
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+          - "9.9.9.9:53"
+
+  # Staging Let's Encrypt for testing
+  letsencrypt-staging:
+    acme:
+      email: "${ADMIN_EMAIL}"
+      storage: "/etc/traefik/certs/acme-staging.json"
+      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      keyType: EC256
+      
+      dnsChallenge:
+        provider: "${DNS_PROVIDER}"
+        delayBeforeCheck: 60s
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+
+# TLS Configuration
+tls:
+  options:
+    # Modern TLS configuration (TLS 1.2+)
+    modern:
+      minVersion: "VersionTLS12"
+      cipherSuites:
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_RSA_WITH_AES_128_GCM_SHA256"
+      curvePreferences:
+        - CurveP521
+        - CurveP384
+      sniStrict: true
+    
+    # Default TLS configuration
+    default:
+      minVersion: "VersionTLS12"
+      sniStrict: true
+
+# Pilot (Traefik Hub) - disabled for privacy
+pilot:
+  dashboard: false
+
+# Ping (health check endpoint)
+ping:
+  entryPoint: "traefik"

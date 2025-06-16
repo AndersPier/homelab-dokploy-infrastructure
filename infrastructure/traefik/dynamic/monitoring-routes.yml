@@ -1,0 +1,221 @@
+# Monitoring and Infrastructure Routes
+# This file contains routes for monitoring and infrastructure services
+
+http:
+  routers:
+    # ==============================================
+    # MONITORING SERVICES
+    # ==============================================
+    
+    # Grafana Dashboard
+    monitoring-grafana:
+      rule: "Host(`monitoring.${DOMAIN_NAME}`) || Host(`grafana.${DOMAIN_NAME}`)"
+      service: grafana-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+      priority: 1000
+
+    # Prometheus (restricted access)
+    monitoring-prometheus:
+      rule: "Host(`prometheus.${DOMAIN_NAME}`)"
+      service: prometheus-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - auth  # Requires authentication
+      priority: 1000
+
+    # AlertManager (restricted access)
+    monitoring-alertmanager:
+      rule: "Host(`alerts.${DOMAIN_NAME}`)"
+      service: alertmanager-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - auth  # Requires authentication
+      priority: 1000
+
+    # Uptime Kuma
+    monitoring-uptime:
+      rule: "Host(`uptime.${DOMAIN_NAME}`) || Host(`status.${DOMAIN_NAME}`)"
+      service: uptime-kuma-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+      priority: 1000
+
+    # ==============================================
+    # INFRASTRUCTURE SERVICES
+    # ==============================================
+    
+    # AdGuard Home (local access recommended)
+    infrastructure-adguard:
+      rule: "Host(`adguard.${DOMAIN_NAME}`) || Host(`dns.${DOMAIN_NAME}`)"
+      service: adguard-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+        - compression
+        - auth  # Requires authentication
+      priority: 1000
+
+    # Proxmox VE (VPN recommended)
+    infrastructure-proxmox:
+      rule: "Host(`proxmox.${DOMAIN_NAME}`) || Host(`pve.${DOMAIN_NAME}`)"
+      service: proxmox-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+        options: modern
+      middlewares:
+        - security-headers
+        - compression
+        - auth  # Requires authentication
+      priority: 1000
+
+    # QNAP Storage (VPN recommended)
+    infrastructure-qnap:
+      rule: "Host(`qnap.${DOMAIN_NAME}`) || Host(`storage.${DOMAIN_NAME}`)"
+      service: qnap-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+        options: modern
+      middlewares:
+        - security-headers
+        - compression
+        - auth  # Requires authentication
+      priority: 1000
+
+    # ==============================================
+    # UTILITY ROUTES
+    # ==============================================
+    
+    # Health check endpoint
+    health-check:
+      rule: "PathPrefix(`/health`) || PathPrefix(`/ping`)"
+      service: health-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-prod
+      middlewares:
+        - security-headers
+      priority: 2000
+
+    # Metrics endpoint (for Prometheus)
+    metrics:
+      rule: "Path(`/metrics`)"
+      service: api@internal
+      entryPoints:
+        - traefik
+      middlewares:
+        - security-headers
+      priority: 2000
+
+  # Services
+  services:
+    # Grafana
+    grafana-service:
+      loadBalancer:
+        servers:
+          - url: "http://${MONITORING_IP}:3000"
+        passHostHeader: true
+        healthCheck:
+          path: "/api/health"
+          interval: "30s"
+          timeout: "5s"
+
+    # Prometheus
+    prometheus-service:
+      loadBalancer:
+        servers:
+          - url: "http://${MONITORING_IP}:9090"
+        passHostHeader: true
+        healthCheck:
+          path: "/-/healthy"
+          interval: "30s"
+          timeout: "5s"
+
+    # AlertManager
+    alertmanager-service:
+      loadBalancer:
+        servers:
+          - url: "http://${MONITORING_IP}:9093"
+        passHostHeader: true
+        healthCheck:
+          path: "/-/healthy"
+          interval: "30s"
+          timeout: "5s"
+
+    # Uptime Kuma
+    uptime-kuma-service:
+      loadBalancer:
+        servers:
+          - url: "http://${MONITORING_IP}:3001"
+        passHostHeader: true
+        healthCheck:
+          path: "/"
+          interval: "30s"
+          timeout: "5s"
+
+    # AdGuard Home
+    adguard-service:
+      loadBalancer:
+        servers:
+          - url: "http://${ADGUARD_PRIMARY_IP}:3000"
+        passHostHeader: true
+        healthCheck:
+          path: "/"
+          interval: "30s"
+          timeout: "5s"
+
+    # Proxmox VE
+    proxmox-service:
+      loadBalancer:
+        servers:
+          - url: "https://${PROXMOX_IP}:8006"
+        passHostHeader: true
+        serversTransport: insecure-transport
+
+    # QNAP Storage
+    qnap-service:
+      loadBalancer:
+        servers:
+          - url: "https://${QNAP_IP}:443"
+        passHostHeader: true
+        serversTransport: insecure-transport
+
+    # Health check service
+    health-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+        passHostHeader: true
+
+  # Server transports
+  serversTransports:
+    insecure-transport:
+      insecureSkipVerify: true
