@@ -1,0 +1,184 @@
+# Homelab Infrastructure Configuration
+# Copy this file to homelab.conf and customize for your environment
+# WARNING: Never commit homelab.conf to git - it contains secrets!
+
+# ============================================================================
+# BASIC CONFIGURATION (Required)
+# ============================================================================
+
+# Domain Configuration
+DOMAIN_NAME="yourdomain.com"                    # CHANGE: Your external domain
+LOCAL_DOMAIN="lab.local"                        # Internal domain for local services
+
+# Network Setup Mode
+# Options: "simple" (single network) or "enterprise" (VLANs)
+NETWORK_MODE="simple"                           # Start with simple, upgrade later
+
+# Basic Network Configuration (Simple Mode)
+NETWORK_CIDR="192.168.1.0/24"                   # CHANGE: Your network range
+GATEWAY_IP="192.168.1.1"                        # CHANGE: Your router IP
+INFRASTRUCTURE_IP="192.168.1.10"                # CHANGE: Infrastructure server IP
+PROXMOX_IP="192.168.1.20"                       # CHANGE: Proxmox host IP
+QNAP_IP="192.168.1.30"                          # CHANGE: QNAP storage IP
+
+# DNS Provider for SSL Certificates
+# Options: cloudflare, digitalocean, route53, namecheap, ovh, gcp
+DNS_PROVIDER="cloudflare"                       # CHANGE: Your DNS provider
+
+# ============================================================================
+# DNS PROVIDER CREDENTIALS (Choose one)
+# ============================================================================
+
+# Cloudflare (Recommended)
+CLOUDFLARE_EMAIL="user@example.com"             # CHANGE: Your Cloudflare email
+CLOUDFLARE_API_TOKEN="your_api_token_here"      # CHANGE: Get from Cloudflare dashboard
+
+# DigitalOcean
+# DO_AUTH_TOKEN="your_do_token_here"
+
+# AWS Route53
+# AWS_ACCESS_KEY_ID="your_access_key"
+# AWS_SECRET_ACCESS_KEY="your_secret_key"
+# AWS_REGION="us-east-1"
+
+# Namecheap
+# NAMECHEAP_API_USER="your_username"
+# NAMECHEAP_API_KEY="your_api_key"
+
+# Google Cloud DNS
+# GCE_PROJECT="your_project_id"
+# GCE_SERVICE_ACCOUNT_FILE="/path/to/service-account.json"
+
+# OVH
+# OVH_ENDPOINT="ovh-eu"
+# OVH_APPLICATION_KEY="your_app_key"
+# OVH_APPLICATION_SECRET="your_app_secret"
+# OVH_CONSUMER_KEY="your_consumer_key"
+
+# ============================================================================
+# EMAIL CONFIGURATION (For alerts and notifications)
+# ============================================================================
+
+ALERT_EMAIL="admin@yourdomain.com"              # CHANGE: Admin email for alerts
+SMTP_SERVER="smtp.gmail.com:587"                # CHANGE: Your SMTP server
+SMTP_USERNAME="alerts@yourdomain.com"           # CHANGE: SMTP username
+SMTP_PASSWORD="your_app_password_here"          # CHANGE: SMTP password (use app password for Gmail)
+
+# ============================================================================
+# DOKPLOY CONFIGURATION
+# ============================================================================
+
+# Dokploy Instance IPs
+DOKPLOY_DEV_IP="192.168.1.100"                  # CHANGE: Development instance IP
+DOKPLOY_STAGING_IP="192.168.1.101"              # CHANGE: Staging instance IP
+DOKPLOY_PROD_IP="192.168.1.102"                 # CHANGE: Production instance IP
+
+# Dokploy Resource Allocation
+DOKPLOY_DEV_CPU="4"                             # CPU cores for dev
+DOKPLOY_DEV_MEMORY="8192"                       # Memory in MB for dev
+DOKPLOY_STAGING_CPU="6"                         # CPU cores for staging
+DOKPLOY_STAGING_MEMORY="12288"                  # Memory in MB for staging
+DOKPLOY_PROD_CPU="8"                            # CPU cores for production
+DOKPLOY_PROD_MEMORY="16384"                     # Memory in MB for production
+
+# ============================================================================
+# ENTERPRISE NETWORK CONFIGURATION (Only for NETWORK_MODE="enterprise")
+# ============================================================================
+
+# VLAN Configuration
+MGMT_VLAN_ID="10"                               # Management VLAN ID
+MGMT_VLAN_CIDR="192.168.10.0/24"                # Management network
+INFRA_VLAN_ID="20"                              # Infrastructure VLAN ID
+INFRA_VLAN_CIDR="192.168.20.0/24"               # Infrastructure network
+DEV_VLAN_ID="30"                                # Development VLAN ID
+DEV_VLAN_CIDR="192.168.30.0/24"                 # Development network
+STAGING_VLAN_ID="40"                            # Staging VLAN ID
+STAGING_VLAN_CIDR="192.168.40.0/24"             # Staging network
+PROD_VLAN_ID="50"                               # Production VLAN ID
+PROD_VLAN_CIDR="192.168.50.0/24"                # Production network
+STORAGE_VLAN_ID="60"                            # Storage VLAN ID
+STORAGE_VLAN_CIDR="192.168.60.0/24"             # Storage network
+
+# ============================================================================
+# BACKUP CONFIGURATION
+# ============================================================================
+
+BACKUP_RETENTION_DAYS="30"                      # Days to keep local backups
+BACKUP_SCHEDULE="0 2 * * *"                     # Daily at 2 AM (cron format)
+
+# Offsite Backup (Optional)
+OFFSITE_BACKUP_ENABLED="false"                  # Enable offsite backups
+OFFSITE_BACKUP_PROVIDER="s3"                    # Options: s3, rclone, rsync
+
+# S3 Configuration (if using S3 for offsite backup)
+# AWS_S3_BUCKET="homelab-backups"
+# AWS_S3_REGION="us-east-1"
+# AWS_S3_ACCESS_KEY="your_s3_access_key"
+# AWS_S3_SECRET_KEY="your_s3_secret_key"
+
+# ============================================================================
+# MONITORING CONFIGURATION
+# ============================================================================
+
+MONITORING_RETENTION_DAYS="90"                  # Metrics retention period
+ALERT_COOLDOWN_MINUTES="15"                     # Minutes between repeat alerts
+
+# External Monitoring (Optional)
+UPTIME_ROBOT_API_KEY=""                         # UptimeRobot API key for external monitoring
+HEALTHCHECKS_IO_UUID=""                         # Healthchecks.io UUID for cron monitoring
+
+# ============================================================================
+# SECURITY CONFIGURATION
+# ============================================================================
+
+# SSH Configuration
+SSH_PORT="22"                                   # SSH port (change for security)
+SSH_KEY_PATH="~/.ssh/id_rsa.pub"                # Path to SSH public key
+
+# VPN Configuration (if using built-in VPN)
+VPN_NETWORK="10.10.10.0/24"                     # VPN client network
+VPN_PORT="51820"                                # WireGuard port
+
+# Firewall
+ENABLE_FAIL2BAN="true"                          # Enable fail2ban for SSH protection
+FIREWALL_DEFAULT_POLICY="DROP"                  # Default firewall policy
+
+# ============================================================================
+# OPTIONAL SERVICES
+# ============================================================================
+
+# Services to deploy (true/false)
+DEPLOY_ADGUARD="true"                           # Deploy AdGuard Home DNS
+DEPLOY_MONITORING="true"                        # Deploy monitoring stack
+DEPLOY_BACKUP_SERVICE="true"                    # Deploy backup automation
+DEPLOY_VPN="false"                              # Deploy VPN server (if UCG Ultra VPN not used)
+DEPLOY_NTOPNG="false"                           # Deploy network traffic analysis
+DEPLOY_UPTIME_KUMA="true"                       # Deploy uptime monitoring
+
+# ============================================================================
+# ADVANCED CONFIGURATION (Usually don't need to change)
+# ============================================================================
+
+# Container Registry
+CONTAINER_REGISTRY="docker.io"                  # Default container registry
+PRIVATE_REGISTRY=""                             # Private registry URL (optional)
+
+# Resource Limits
+DEFAULT_CPU_LIMIT="2"                           # Default CPU limit for containers
+DEFAULT_MEMORY_LIMIT="2g"                       # Default memory limit for containers
+
+# Update Configuration
+AUTO_UPDATE_ENABLED="true"                      # Enable automatic security updates
+UPDATE_SCHEDULE="0 3 * * 0"                     # Weekly updates on Sunday at 3 AM
+
+# Logging
+LOG_LEVEL="INFO"                                # Log level: DEBUG, INFO, WARN, ERROR
+LOG_RETENTION_DAYS="30"                         # Days to keep logs
+
+# ============================================================================
+# VALIDATION (Don't modify)
+# ============================================================================
+
+# This section is used by scripts to validate configuration
+CONFIG_VERSION="1.0"
+LAST_UPDATED="$(date +%Y-%m-%d)"
